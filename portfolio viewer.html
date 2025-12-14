@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portfolio Viewer</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- PDF.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    
+    <!-- Simple Page Flip -->
+    <script src="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/js/page-flip.browser.js"></script>
+
+    <!-- Icon Library -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        /* Advanced Font Settings */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            background-color: #f2f2f4;
+            color: #333;
+            overflow: hidden;
+        }
+
+        /* Hide Scrollbar */
+        ::-webkit-scrollbar { width: 0px; background: transparent; }
+
+        /* Loader Animation */
+        .loader {
+            border: 3px solid #e5e5e5;
+            border-top: 3px solid #666;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Book Container */
+        .book-wrapper {
+            box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.25); 
+            transition: opacity 0.5s ease;
+        }
+
+        /* === Plugin Control Layer === */
+        .stf__item {
+            background: #fff;
+        }
+
+        /* === Content Decoration Layer === */
+        .page-inner {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            background-color: #fdfdfd;
+            border: none; 
+            box-sizing: border-box; 
+            overflow: hidden;
+        }
+
+        /* Image Content */
+        .page-content {
+            width: 100%;
+            height: 100%;
+            object-fit: fill; 
+            display: block;
+        }
+
+        /* === Shadow Layer === */
+        .shadow-overlay {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 7%; 
+            pointer-events: none; 
+            z-index: 10; 
+            mix-blend-mode: multiply;
+            opacity: 0.5; 
+        }
+
+        /* Left Page Shadow */
+        .shadow-left {
+            right: 0;
+            background: linear-gradient(to left, 
+                rgba(0,0,0,0.08) 0%, 
+                rgba(0,0,0,0.02) 40%, 
+                rgba(0,0,0,0) 100%);
+            border-right: 0.5px solid rgba(0,0,0,0.04); 
+        }
+
+        /* Right Page Shadow */
+        .shadow-right {
+            left: 0;
+            background: linear-gradient(to right, 
+                rgba(0,0,0,0.08) 0%, 
+                rgba(0,0,0,0.02) 40%, 
+                rgba(0,0,0,0) 100%);
+            border-left: 0.5px solid rgba(0,0,0,0.04);
+        }
+        
+        /* Glassmorphism Control Panel */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col items-center justify-center">
+
+    <!-- Top Navigation -->
+    <div class="absolute top-0 left-0 w-full p-6 flex justify-between items-center z-50 pointer-events-none">
+        <div class="pointer-events-auto">
+            <h1 class="text-xl font-light tracking-widest text-gray-700">PORTFOLIO</h1>
+            <p class="text-xs text-gray-400 mt-1">Jiya Yuan</p>
+        </div>
+    </div>
+
+    <!-- Main Display Area -->
+    <div id="main-container" class="relative w-full h-full flex items-center justify-center">
+        
+        <!-- Error State -->
+        <div id="error-state" class="hidden text-center opacity-80 max-w-md px-6">
+            <div class="mb-4 flex justify-center">
+                <i data-lucide="alert-circle" class="w-12 h-12 text-red-300"></i>
+            </div>
+            <p class="text-lg text-gray-600 font-light mb-2">Unable to load portfolio</p>
+            <p class="text-xs text-gray-400 font-mono bg-gray-100 p-2 rounded break-all" id="error-msg">Please check path configuration</p>
+            <p class="text-xs text-red-400 mt-2">Note: Browsers block direct access to local absolute paths like E:/</p>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loading-state" class="flex flex-col items-center absolute z-50">
+            <div class="loader mb-4"></div>
+            <p class="text-sm text-gray-500 tracking-wide" id="loading-text">Initializing...</p>
+        </div>
+
+        <!-- Book Stage -->
+        <div id="book-stage" class="absolute inset-0 flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-700">
+            <div id="book" class="book-wrapper">
+                <!-- Dynamically generated -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Bottom Controls -->
+    <div id="controls" class="absolute bottom-8 left-1/2 transform -translate-x-1/2 glass-panel px-6 py-3 rounded-full flex items-center gap-6 shadow-lg opacity-0 transition-opacity duration-500 z-50">
+        <button id="btn-prev" class="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-600 disabled:opacity-30">
+            <i data-lucide="chevron-left" class="w-5 h-5"></i>
+        </button>
+        
+        <span class="text-xs font-mono text-gray-500 min-w-[60px] text-center">
+            <span id="current-page">0</span> / <span id="total-pages">0</span>
+        </span>
+
+        <button id="btn-next" class="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-600 disabled:opacity-30">
+            <i data-lucide="chevron-right" class="w-5 h-5"></i>
+        </button>
+    </div>
+
+    <script>
+        lucide.createIcons();
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        // ==========================================
+        // CONFIG: Set your PDF path here
+        // ==========================================
+        const CONFIG = {
+            // Option 1: Online test PDF
+            // url: 'https://mozilla.github.io/pdf.js/web/compressed.tracemonkey-pldi-09.pdf',
+            
+            // Option 2: Your own file (Uncomment and ensure file is in same directory)
+            url: './jiya.pdf', 
+        };
+
+        let pageFlip = null;
+        let pdfDoc = null;
+        const loadingState = document.getElementById('loading-state');
+        const loadingText = document.getElementById('loading-text');
+        const errorState = document.getElementById('error-state');
+        const errorMsg = document.getElementById('error-msg');
+        const bookStage = document.getElementById('book-stage');
+        const bookEl = document.getElementById('book');
+        const controls = document.getElementById('controls');
+        
+        window.addEventListener('DOMContentLoaded', initApp);
+        
+        document.getElementById('btn-prev').addEventListener('click', () => pageFlip?.flipPrev());
+        document.getElementById('btn-next').addEventListener('click', () => pageFlip?.flipNext());
+
+        async function initApp() {
+            try {
+                loadingText.innerText = "Fetching portfolio...";
+                const loadingTask = pdfjsLib.getDocument(CONFIG.url);
+                
+                loadingTask.onProgress = function(progress) {
+                    const percent = Math.round((progress.loaded / progress.total) * 100);
+                    if (!isNaN(percent)) {
+                        loadingText.innerText = `Downloading PDF... ${percent}%`;
+                    }
+                };
+
+                pdfDoc = await loadingTask.promise;
+                await renderPages();
+
+            } catch (error) {
+                console.error(error);
+                let msg = `Failed to load PDF file: ${CONFIG.url}.`;
+                if (CONFIG.url.includes(':') && !CONFIG.url.startsWith('http')) {
+                    msg += " Local absolute path detected (e.g. E:/). Please use relative path './filename.pdf'.";
+                } else {
+                    msg += " Please check CORS settings or file path validity.";
+                }
+                showError(msg);
+            }
+        }
+
+        async function renderPages() {
+            const totalPDFPages = pdfDoc.numPages;
+            
+            const firstPage = await pdfDoc.getPage(1);
+            const vp1 = firstPage.getViewport({ scale: 1 });
+            const isStartWithSpread = vp1.width > vp1.height;
+            
+            const screenH = window.innerHeight * 0.85;
+            const screenW = window.innerWidth * 0.9;
+            
+            let targetHeight = screenH;
+            const singlePageAspectRatio = isStartWithSpread ? (vp1.width / 2) / vp1.height : vp1.width / vp1.height;
+            let targetWidth = targetHeight * singlePageAspectRatio;
+
+            if (targetWidth * 2 > screenW) {
+                targetWidth = screenW / 2;
+                targetHeight = targetWidth / singlePageAspectRatio;
+            }
+
+            loadingText.innerText = `Processing...`;
+
+            let renderedPageCount = 0;
+
+            for (let i = 1; i <= totalPDFPages; i++) {
+                const page = await pdfDoc.getPage(i);
+                const scale = 2;
+                const viewport = page.getViewport({ scale: scale });
+                const isLandscape = viewport.width > viewport.height;
+
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.width = viewport.width;
+                canvas.height = viewport.height;
+
+                await page.render({ canvasContext: context, viewport: viewport }).promise;
+
+                if (isLandscape) {
+                    // === A3 Split Mode (Always has shadows) ===
+                    const halfWidth = canvas.width / 2;
+                    const height = canvas.height;
+
+                    const leftUrl = cropCanvas(canvas, 0, 0, halfWidth, height);
+                    createBookPage(leftUrl, 'left'); 
+                    renderedPageCount++;
+
+                    const rightUrl = cropCanvas(canvas, halfWidth, 0, halfWidth, height);
+                    createBookPage(rightUrl, 'right');
+                    renderedPageCount++;
+                } else {
+                    // === A4 Single Mode (Added Shadow Logic) ===
+                    // Even count (0, 2...) = Left Page = Needs 'left' shadow (on right edge)
+                    // Odd count (1, 3...) = Right Page = Needs 'right' shadow (on left edge)
+                    const type = (renderedPageCount % 2 === 0) ? 'left' : 'right';
+                    
+                    createBookPage(canvas.toDataURL('image/jpeg', 0.9), type);
+                    renderedPageCount++;
+                }
+                
+                loadingText.innerText = `Rendering page (${i}/${totalPDFPages})...`;
+            }
+            
+            document.getElementById('total-pages').innerText = renderedPageCount;
+            // Force showCover to FALSE to unify flip effect (Always start open as spread)
+            initFlipBook(targetWidth, targetHeight, false);
+        }
+
+        function cropCanvas(sourceCanvas, x, y, w, h) {
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = w;
+            tempCanvas.height = h;
+            const ctx = tempCanvas.getContext('2d');
+            ctx.drawImage(sourceCanvas, x, y, w, h, 0, 0, w, h);
+            return tempCanvas.toDataURL('image/jpeg', 0.9);
+        }
+
+        function createBookPage(imgUrl, type) {
+            const div = document.createElement('div');
+            div.className = 'stf__item';
+            
+            const inner = document.createElement('div');
+            inner.className = 'page-inner';
+
+            const img = document.createElement('img');
+            img.src = imgUrl;
+            img.className = 'page-content';
+            img.loading = "lazy";
+            inner.appendChild(img);
+            
+            // Apply static shadows based on page position type
+            if (type === 'left') {
+                const shadow = document.createElement('div');
+                shadow.className = 'shadow-overlay shadow-left';
+                inner.appendChild(shadow);
+            } else if (type === 'right') {
+                const shadow = document.createElement('div');
+                shadow.className = 'shadow-overlay shadow-right';
+                inner.appendChild(shadow);
+            }
+            
+            div.appendChild(inner);
+            bookEl.appendChild(div);
+        }
+
+        function initFlipBook(width, height, hasCover) {
+            loadingText.innerText = "Binding book...";
+
+            bookStage.classList.remove('opacity-0'); 
+
+            pageFlip = new St.PageFlip(bookEl, {
+                width: width, 
+                height: height,
+                size: 'fixed',
+                minWidth: 200,
+                maxWidth: 1000,
+                minHeight: 300,
+                maxHeight: 1400,
+                maxShadowOpacity: 0.5, 
+                showCover: hasCover, // This will now be FALSE, enforcing consistent spread behavior
+                mobileScrollSupport: false,
+                usePortrait: false,
+                flippingTime: 800,
+                startPage: 0
+            });
+
+            pageFlip.loadFromHTML(document.querySelectorAll('.stf__item'));
+
+            pageFlip.on('flip', (e) => {
+                const current = e.data + 1;
+                document.getElementById('current-page').innerText = current;
+                updateButtonState();
+            });
+
+            setTimeout(() => {
+                loadingState.classList.add('hidden');
+                loadingState.classList.remove('flex');
+                
+                bookStage.classList.remove('pointer-events-none');
+                bookStage.classList.remove('opacity-0');
+                controls.classList.remove('opacity-0');
+
+                document.getElementById('current-page').innerText = 1;
+                updateButtonState();
+            }, 500);
+        }
+
+        function updateButtonState() {
+            if (!pageFlip) return;
+            const current = pageFlip.getCurrentPageIndex();
+            const total = pageFlip.getPageCount();
+            document.getElementById('btn-prev').disabled = current === 0;
+            document.getElementById('btn-next').disabled = current >= total - 1;
+        }
+
+        function showError(msg) {
+            loadingState.classList.add('hidden');
+            errorState.classList.remove('hidden');
+            errorMsg.innerText = msg;
+        }
+
+        window.addEventListener('resize', () => {
+             // Resize logic placeholder
+        });
+    </script>
+</body>
+</html>
